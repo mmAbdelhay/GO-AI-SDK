@@ -36,6 +36,9 @@ var (
 	// ErrNotFound indicates the requested model or resource does not exist
 	// (typically HTTP 404).
 	ErrNotFound = errors.New("ai: not found")
+	// ErrInvalidSchema indicates the model's output failed schema validation
+	// even after the configured repair attempts (see GenerateObject).
+	ErrInvalidSchema = errors.New("ai: output does not conform to schema")
 )
 
 // APIError is a normalized provider error. It wraps one of the package sentinels

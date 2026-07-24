@@ -7,15 +7,28 @@ import "encoding/json"
 // package; these exist only at the translation boundary.
 
 type wireRequest struct {
-	Model         string        `json:"model"`
-	MaxTokens     int           `json:"max_tokens"`
-	Messages      []wireMessage `json:"messages"`
-	System        string        `json:"system,omitempty"`
-	Temperature   *float64      `json:"temperature,omitempty"`
-	TopP          *float64      `json:"top_p,omitempty"`
-	TopK          *int          `json:"top_k,omitempty"`
-	StopSequences []string      `json:"stop_sequences,omitempty"`
-	Stream        bool          `json:"stream,omitempty"`
+	Model         string          `json:"model"`
+	MaxTokens     int             `json:"max_tokens"`
+	Messages      []wireMessage   `json:"messages"`
+	System        string          `json:"system,omitempty"`
+	Temperature   *float64        `json:"temperature,omitempty"`
+	TopP          *float64        `json:"top_p,omitempty"`
+	TopK          *int            `json:"top_k,omitempty"`
+	StopSequences []string        `json:"stop_sequences,omitempty"`
+	Stream        bool            `json:"stream,omitempty"`
+	Tools         []wireTool      `json:"tools,omitempty"`
+	ToolChoice    *wireToolChoice `json:"tool_choice,omitempty"`
+}
+
+type wireTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+type wireToolChoice struct {
+	Type string `json:"type"` // "auto", "any", "tool", or "none"
+	Name string `json:"name,omitempty"`
 }
 
 type wireMessage struct {

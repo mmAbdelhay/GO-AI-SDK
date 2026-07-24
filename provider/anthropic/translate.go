@@ -37,6 +37,15 @@ func (c *Client) toWire(req ai.Request, stream bool) (wireRequest, error) {
 		Stream:        stream,
 	}
 
+	for _, t := range req.Tools {
+		w.Tools = append(w.Tools, wireTool{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
+	}
+	if tc, err := toWireToolChoice(req.ToolChoice); err != nil {
+		return wireRequest{}, err
+	} else if tc != nil {
+		w.ToolChoice = tc
+	}
+
 	// Apply recognized provider options.
 	for _, opt := range req.ProviderOptions {
 		if o, ok := opt.(topKOption); ok {
@@ -60,6 +69,25 @@ func (c *Client) toWire(req ai.Request, stream bool) (wireRequest, error) {
 	}
 
 	return w, nil
+}
+
+// toWireToolChoice maps the neutral tool choice onto Anthropic's tool_choice
+// values ("required" is Anthropic's "any").
+func toWireToolChoice(tc ai.ToolChoice) (*wireToolChoice, error) {
+	switch tc.Mode {
+	case "":
+		return nil, nil
+	case "auto":
+		return &wireToolChoice{Type: "auto"}, nil
+	case "required":
+		return &wireToolChoice{Type: "any"}, nil
+	case "none":
+		return &wireToolChoice{Type: "none"}, nil
+	case "tool":
+		return &wireToolChoice{Type: "tool", Name: tc.Name}, nil
+	default:
+		return nil, fmt.Errorf("anthropic: unsupported tool choice mode %q", tc.Mode)
+	}
 }
 
 func appendSystem(existing string, m ai.Message) string {

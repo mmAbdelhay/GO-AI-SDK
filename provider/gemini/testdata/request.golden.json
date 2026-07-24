@@ -1,0 +1,78 @@
+{
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "You are helpful.\n\nBe concise."
+      }
+    ]
+  },
+  "contents": [
+    {
+      "role": "user",
+      "parts": [
+        {
+          "text": "What is in this image?"
+        },
+        {
+          "inlineData": {
+            "mimeType": "image/png",
+            "data": "UE5HREFUQQ=="
+          }
+        }
+      ]
+    },
+    {
+      "role": "model",
+      "parts": [
+        {
+          "functionCall": {
+            "name": "lookup",
+            "args": {
+              "q": "x"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "parts": [
+        {
+          "functionResponse": {
+            "name": "lookup",
+            "response": {
+              "output": "42"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "generationConfig": {
+    "temperature": 0.7,
+    "maxOutputTokens": 256
+  },
+  "tools": [
+    {
+      "functionDeclarations": [
+        {
+          "name": "lookup",
+          "description": "Looks things up",
+          "parameters": {
+            "properties": {
+              "q": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        }
+      ]
+    }
+  ],
+  "toolConfig": {
+    "functionCallingConfig": {
+      "mode": "AUTO"
+    }
+  }
+}

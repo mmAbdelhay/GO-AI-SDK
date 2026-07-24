@@ -40,6 +40,23 @@ func WithMessages(msgs ...Message) Option {
 	return func(r *Request) { r.Messages = append(r.Messages, msgs...) }
 }
 
+// WithTools declares tools the model may call.
+func WithTools(tools ...ToolDef) Option {
+	return func(r *Request) { r.Tools = append(r.Tools, tools...) }
+}
+
+// WithToolChoice constrains tool use; see [ToolChoice].
+func WithToolChoice(tc ToolChoice) Option {
+	return func(r *Request) { r.ToolChoice = tc }
+}
+
+// WithObjectRepairs sets how many repair rounds [GenerateObject] may attempt
+// when the model returns JSON that fails validation (default 2). Pass a
+// negative value to disable repair entirely.
+func WithObjectRepairs(n int) Option {
+	return func(r *Request) { r.objectRepairs = n }
+}
+
 // WithProviderOptions attaches provider-specific typed options. Each provider
 // inspects only the options it recognizes.
 func WithProviderOptions(opts ...ProviderOption) Option {

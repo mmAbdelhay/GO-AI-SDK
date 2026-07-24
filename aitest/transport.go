@@ -35,8 +35,12 @@ type recordedRequest struct {
 	Body   []byte
 }
 
-// RoundTrip implements http.RoundTripper.
+// RoundTrip implements http.RoundTripper. Like a real transport, it fails when
+// the request's context is already done.
 func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if err := r.Context().Err(); err != nil {
+		return nil, err
+	}
 	var body []byte
 	if r.Body != nil {
 		body, _ = io.ReadAll(r.Body)
@@ -87,6 +91,16 @@ func (t *Transport) LastRequestBody() ([]byte, bool) {
 		return nil, false
 	}
 	return t.requests[len(t.requests)-1].Body, true
+}
+
+// LastRequestURL returns the URL of the most recent request.
+func (t *Transport) LastRequestURL() (string, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.requests) == 0 {
+		return "", false
+	}
+	return t.requests[len(t.requests)-1].URL, true
 }
 
 // LastRequestHeader returns the header of the most recent request.

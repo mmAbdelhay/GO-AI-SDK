@@ -1,12 +1,10 @@
 # Go AI SDK
 
-A unified, idiomatic Go interface for working with multiple AI providers. One
-type-safe API for text generation, streaming, structured output, agents, tools,
-embeddings, and more — designed the Go way, not ported from another ecosystem.
-
-> **Status: Phase 1 (Core + Anthropic).** This is the foundation layer. Later
-> phases add structured output, tools/agents, memory, more providers, RAG,
-> resilience, and observability — see the [roadmap](#roadmap).
+A unified, idiomatic Go interface for working with multiple AI providers —
+Anthropic, OpenAI, Gemini, Groq, and xAI behind one type-safe API. Text
+generation, streaming, structured output with generics, agents with tools,
+conversation memory, embeddings and vector search, resilience, and
+observability. Designed the Go way, not ported from another ecosystem.
 
 ## Install
 
@@ -20,131 +18,184 @@ non-standard-library dependencies**.
 ## Quickstart
 
 ```go
-package main
+model := anthropic.New(os.Getenv("ANTHROPIC_API_KEY"),
+	anthropic.WithModel("claude-sonnet-4-20250514"))
 
-import (
-	"context"
-	"fmt"
-	"os"
-
-	ai "github.com/mmabdelhay/go-ai-sdk"
-	"github.com/mmabdelhay/go-ai-sdk/provider/anthropic"
-)
-
-func main() {
-	model := anthropic.New(os.Getenv("ANTHROPIC_API_KEY"),
-		anthropic.WithModel("claude-sonnet-4-20250514"))
-
-	resp, err := ai.Generate(context.Background(), model,
-		"Write a haiku about Go.", ai.WithMaxTokens(200))
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(resp.Text())
-}
+resp, err := ai.Generate(ctx, model, "Write a haiku about Go.",
+	ai.WithMaxTokens(200))
+fmt.Println(resp.Text())
 ```
 
-### Streaming
+Swap `anthropic.New` for `openai.New`, `gemini.New`, `groq.New`, or `xai.New` —
+everything else is identical. The same agent code runs unchanged against all
+providers, verified by a shared conformance test suite.
 
-`GenerateStream` returns an iterator you can `range` over directly, or drain with
-`.Text()` / `.Collect()`:
+### Streaming
 
 ```go
 for chunk, err := range ai.GenerateStream(ctx, model, "Tell me a story.") {
 	if err != nil { /* handle */ }
 	fmt.Print(chunk.Text)
 }
+// or: text, err := ai.GenerateStream(ctx, model, "...").Text()
+```
 
-// or, if you don't care about streaming:
-text, err := ai.GenerateStream(ctx, model, "Tell me a story.").Text()
+### Structured output (generics)
+
+```go
+type Invoice struct {
+	Number string  `json:"number" desc:"The invoice number"`
+	Total  float64 `json:"total"`
+	Status string  `json:"status" enum:"draft,sent,paid"`
+}
+
+inv, err := ai.GenerateObject[Invoice](ctx, model, "Extract: "+email)
+```
+
+A JSON Schema is derived from the struct via reflection and tags, sent to the
+model, and the output is validated and unmarshaled. Validation failures are fed
+back to the model in a configurable repair loop (`ai.WithObjectRepairs`).
+
+### Agents with tools
+
+```go
+weather := tool.MustNew("get_weather", "Weather for a city",
+	func(ctx context.Context, in struct {
+		City string `json:"city"`
+	}) (string, error) { return lookup(in.City) })
+
+a := agent.New(model,
+	agent.WithTools(weather),
+	agent.WithMaxIterations(6),               // hard cap: typed error, not a spin
+	agent.WithTokenBudget(20_000),            // per-run budget
+	agent.WithApproval(reviewToolCall),       // human gate for side effects
+	agent.WithMemory(memory.NewInMemory(), "conv-1"), // remembers across runs
+)
+res, err := a.Run(ctx, "What's the weather in Cairo in Fahrenheit?")
+```
+
+Tool input schemas are derived from Go function signatures. Context
+cancellation is honored mid-loop; long conversations degrade via pluggable
+strategies (`memory.Truncate`, `memory.Summarize`) — never silently.
+
+### RAG
+
+```go
+emb, _ := embedder.Embed(ctx, texts)                 // openai or gemini embedder
+store.Upsert(ctx, emb.Model, docs...)                // model recorded with vectors
+matches, _ := store.Query(ctx, vector.Query{         // refuses cross-model queries
+	Embedding: qv, Model: emb.Model, TopK: 3,
+	Filters: []vector.Filter{vector.Where("topic", "go")},
+})
+```
+
+### Resilience
+
+```go
+model := resilience.NewFallback(resilience.FallbackConfig{
+	OnFailover: func(from, to string, err error) { log.Printf("%s -> %s: %v", from, to, err) },
+},
+	resilience.NewRetry(anthropicClient, resilience.RetryConfig{}), // backoff + jitter
+	openaiClient,
+)
+```
+
+Retry, fallback, circuit breaker (`resilience.NewBreaker`), and client-side
+rate limiting (`resilience.NewRateLimiter`) — all explicit, configurable, and
+observable via callbacks. No hidden retries anywhere in the library.
+
+### Observability
+
+```go
+tracker := middleware.NewUsageTracker()
+model = middleware.Chain(model,
+	middleware.Logging(slog.Default()),
+	tracker.Middleware(),
+)
+// later: tracker.Total(), tracker.PerModel(), tracker.Cost(pricing)
 ```
 
 ### Normalized errors
 
-Provider errors map onto a shared taxonomy, so detection is identical across
-providers:
-
 ```go
-if errors.Is(err, ai.ErrRateLimited) {
-	// back off and retry
-}
+if errors.Is(err, ai.ErrRateLimited) { ... }  // same check for every provider
 var apiErr *ai.APIError
-if errors.As(err, &apiErr) {
-	fmt.Println(apiErr.StatusCode, apiErr.RetryAfter)
-}
+if errors.As(err, &apiErr) { fmt.Println(apiErr.StatusCode, apiErr.RetryAfter) }
 ```
 
 ### Testing without a network
 
-Every interface ships with a first-class fake in the `aitest` package, so you can
-test agents and app code with no API key and no network:
-
-```go
-model := &aitest.Model{Responses: []ai.Response{
-	aitest.TextResponse("scripted reply"),
-}}
-resp, _ := ai.Generate(ctx, model, "hi")
-// resp.Text() == "scripted reply"
-// model.LastRequest(), model.CallCount() for assertions
-```
-
-## Design principles
-
-- **Idiomatic Go, not a transliteration** — explicit constructor injection, small
-  interfaces, no global state, no service container.
-- **Minimal dependencies** — core is stdlib-only; optional integrations live in
-  separate submodules so you pull only what you use.
-- **`context.Context` first** on every I/O call.
-- **Errors are typed values** — a normalized taxonomy, wrapped with `%w`.
-- **Streaming via iterators** (`iter.Seq2`-shaped), not callbacks.
-- **No hidden network calls or retries** — retry/timeout behavior is configured on
-  the `*http.Client` you supply.
-- **Provider-specific options stay type-safe** — no `map[string]any` config blob.
+Every interface ships a first-class fake in `aitest`: a scripted `ChatModel`, a
+deterministic `Embedder`, a `Reranker`, and a fake HTTP transport for testing
+real provider clients offline. `go test ./...` for this entire repository needs
+no API key and no network. A shared conformance suite
+(`aitest.RunConformance`) keeps every provider behaviorally identical.
 
 ## Feature status
 
 | Feature | Status |
 | --- | --- |
-| Canonical message model (text, image, tool-call, tool-result) | ✅ Phase 1 |
-| Text generation (`Generate`) | ✅ Phase 1 |
-| Streaming (`GenerateStream`, `Stream.Text`/`Collect`) | ✅ Phase 1 |
-| Functional + typed provider options | ✅ Phase 1 |
-| Normalized error taxonomy | ✅ Phase 1 |
-| Token usage reporting | ✅ Phase 1 |
-| Anthropic provider | ✅ Phase 1 |
-| Test fakes (`aitest`) | ✅ Phase 1 |
-| Structured output (`Generate[T]`, JSON Schema) | 🔜 Phase 2 |
-| Tools + agent loop | 🔜 Phase 3 |
-| Conversation memory | 🔜 Phase 4 |
-| OpenAI / Gemini / Groq / xAI providers | 🔜 Phase 5 |
-| Embeddings, vector store, reranking | 🔜 Phase 6 |
-| Fallback, retry, rate limiting | 🔜 Phase 7 |
-| Observability (`slog`, OpenTelemetry) | 🔜 Phase 8 |
-| Multimodal (audio, files) | 🔜 Phase 9 |
-| MCP client support | 🔜 Phase 10 |
+| Canonical message model (text, image, tool-call, tool-result) | ✅ |
+| Text generation + streaming iterators | ✅ |
+| Structured output (`GenerateObject[T]`, schema derivation, repair loop) | ✅ |
+| Tools + agent loop (caps, budgets, approval hook, cancellation) | ✅ |
+| Conversation memory + context strategies (truncate, summarize) | ✅ |
+| Providers: Anthropic, OpenAI, Gemini, Groq, xAI | ✅ |
+| Embeddings (OpenAI, Gemini) + in-memory vector store + reranker interface | ✅ |
+| Resilience: retry, fallback, circuit breaker, rate limiting | ✅ |
+| Observability: slog, hooks, usage/cost tracking | ✅ |
+| Provider conformance test suite + fakes (`aitest`) | ✅ |
+| SQL-backed stores (pgvector, sqlite) as submodules | 🔜 |
+| OpenTelemetry tracing submodule | 🔜 |
+| Multimodal beyond image input (audio, files) | 🔜 |
+| MCP client support | 🔜 |
 
-## Roadmap
-
-The library is built in reviewable phases. Phase 1 establishes the core
-abstractions — the canonical message model, the `ChatModel` interface, streaming,
-options, errors, and one complete provider — that every later phase builds on.
+The deferred items are separate submodules or lower-priority phases by design:
+the core stays dependency-free, and `middleware.Hooks` is the extension point
+the OTel submodule will build on.
 
 ## Package layout
 
 ```
-.                       core types, options, errors, entrypoints (package ai)
-provider/anthropic      Anthropic Messages API implementation of ai.ChatModel
-aitest                  scripted fakes + fake HTTP transport for offline tests
+.                       core: types, options, errors, Generate/GenerateStream/GenerateObject
+schema                  Go struct -> JSON Schema (reflection + tags) + validation
+tool                    Tool interface, typed constructor, registry
+agent                   the agent loop + safeguards
+memory                  ConversationStore + in-memory impl + context strategies
+vector                  VectorStore + in-memory impl (model-checked queries)
+rerank                  Reranker interface
+resilience              retry, fallback, circuit breaker, rate limiter
+middleware              slog logging, hooks, usage/cost tracking
+provider/anthropic      Anthropic Messages API
+provider/openai         OpenAI Chat Completions + Embeddings
+provider/gemini         Google Gemini generateContent + embeddings
+provider/groq           Groq (OpenAI-compatible, thin wrapper)
+provider/xai            xAI (OpenAI-compatible, thin wrapper)
+aitest                  fakes, fake transport, conformance suite
 examples/               runnable examples
 ```
+
+## Design principles
+
+- **Idiomatic Go** — constructor injection, small consumer-side interfaces, no
+  global state, no `Init()`.
+- **Minimal dependencies** — the core is stdlib-only; integrations that need
+  dependencies go in separate submodules.
+- **`context.Context` first** on every I/O call; cancellation honored mid-agent-loop.
+- **Errors are typed values** — one taxonomy across all providers.
+- **Streaming via iterators**, not callbacks.
+- **Nothing silent** — retries, failovers, truncation, and message drops are all
+  observable through explicit configuration.
+- **No `map[string]any` APIs** — provider-specific knobs are typed options.
 
 ## Testing
 
 ```sh
-go test ./...                                   # unit tests, no network or key
-go test -race ./...                             # with the race detector
-go test -run x -fuzz FuzzParseSSE ./provider/anthropic   # fuzz the SSE parser
-ANTHROPIC_API_KEY=... go test -tags integration ./provider/anthropic  # live API
+go test ./...                 # everything, offline, no keys
+go test -race ./...
+go test -run x -fuzz FuzzParseSSE ./provider/anthropic
+go test -run x -fuzz FuzzValidate ./schema
+ANTHROPIC_API_KEY=... go test -tags integration ./provider/anthropic
 ```
 
 ## License

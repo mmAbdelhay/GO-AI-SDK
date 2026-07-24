@@ -156,10 +156,51 @@ type Request struct {
 	MaxTokens int
 	// StopSequences halt generation when produced.
 	StopSequences []string
+	// Tools declares the tools the model may call. Providers translate these to
+	// their native tool/function declarations.
+	Tools []ToolDef
+	// ToolChoice controls whether and which tool the model must call. The zero
+	// value leaves the provider default (auto when tools are present).
+	ToolChoice ToolChoice
 	// ProviderOptions carries provider-specific, typed knobs. Each provider
 	// inspects only the options it recognizes and ignores the rest.
 	ProviderOptions []ProviderOption
+
+	// objectRepairs configures GenerateObject's repair loop; see
+	// WithObjectRepairs. Unexported: it has no meaning for plain generation.
+	objectRepairs int
 }
+
+// ToolDef is a provider-neutral tool declaration: a name, a description, and a
+// JSON Schema for the tool's input. The tool package produces these from Go
+// functions; providers translate them to their wire formats.
+type ToolDef struct {
+	Name        string
+	Description string
+	InputSchema json.RawMessage
+}
+
+// ToolChoice constrains tool use for a request.
+type ToolChoice struct {
+	// Mode is one of "", "auto", "required", "none", or "tool". The zero value
+	// defers to the provider default.
+	Mode string
+	// Name is the tool that must be called when Mode is "tool".
+	Name string
+}
+
+// Tool choice helpers.
+var (
+	// ToolAuto lets the model decide whether to call a tool.
+	ToolAuto = ToolChoice{Mode: "auto"}
+	// ToolRequired forces the model to call some tool.
+	ToolRequired = ToolChoice{Mode: "required"}
+	// ToolNone forbids tool calls even when tools are declared.
+	ToolNone = ToolChoice{Mode: "none"}
+)
+
+// ToolNamed forces the model to call the named tool.
+func ToolNamed(name string) ToolChoice { return ToolChoice{Mode: "tool", Name: name} }
 
 // Response is a provider-neutral generation result.
 type Response struct {
