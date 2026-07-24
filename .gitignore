@@ -1,0 +1,10 @@
+# Test binaries and coverage
+*.test
+*.out
+coverage.txt
+
+# Fuzz corpus generated locally
+testdata/fuzz/
+
+# Editor/OS noise
+.DS_Store
