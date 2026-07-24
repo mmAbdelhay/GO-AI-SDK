@@ -118,6 +118,20 @@ func toWireContent(m ai.Message) (gContent, error) {
 					Data:     base64.StdEncoding.EncodeToString(v.Data),
 				}})
 			}
+		case ai.Audio:
+			content.Parts = append(content.Parts, gPart{InlineData: &gInlineData{
+				MimeType: v.MediaType,
+				Data:     base64.StdEncoding.EncodeToString(v.Data),
+			}})
+		case ai.Document:
+			if v.URL != "" {
+				content.Parts = append(content.Parts, gPart{FileData: &gFileData{FileURI: v.URL}})
+			} else {
+				content.Parts = append(content.Parts, gPart{InlineData: &gInlineData{
+					MimeType: v.MediaType,
+					Data:     base64.StdEncoding.EncodeToString(v.Data),
+				}})
+			}
 		case ai.ToolCall:
 			content.Parts = append(content.Parts, gPart{FunctionCall: &gFunctionCall{
 				Name: v.Name, Args: v.Input,

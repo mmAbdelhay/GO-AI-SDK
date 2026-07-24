@@ -45,13 +45,26 @@ type oaMessage struct {
 }
 
 type oaContentPart struct {
-	Type     string      `json:"type"` // "text" or "image_url"
-	Text     string      `json:"text,omitempty"`
-	ImageURL *oaImageURL `json:"image_url,omitempty"`
+	Type       string        `json:"type"` // "text", "image_url", "input_audio", "file"
+	Text       string        `json:"text,omitempty"`
+	ImageURL   *oaImageURL   `json:"image_url,omitempty"`
+	InputAudio *oaInputAudio `json:"input_audio,omitempty"`
+	File       *oaFile       `json:"file,omitempty"`
 }
 
 type oaImageURL struct {
 	URL string `json:"url"`
+}
+
+type oaInputAudio struct {
+	Data   string `json:"data"`   // base64
+	Format string `json:"format"` // "wav", "mp3", ...
+}
+
+type oaFile struct {
+	Filename string `json:"filename,omitempty"`
+	FileData string `json:"file_data,omitempty"` // data: URI
+	FileID   string `json:"file_id,omitempty"`
 }
 
 type oaToolCall struct {

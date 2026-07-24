@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	ai "github.com/mmabdelhay/go-ai-sdk"
 )
@@ -103,6 +104,21 @@ func toWireMessages(m ai.Message) ([]oaMessage, error) {
 				url = "data:" + v.MediaType + ";base64," + base64.StdEncoding.EncodeToString(v.Data)
 			}
 			textParts = append(textParts, oaContentPart{Type: "image_url", ImageURL: &oaImageURL{URL: url}})
+		case ai.Audio:
+			hasImage = true // force the array content form
+			textParts = append(textParts, oaContentPart{Type: "input_audio", InputAudio: &oaInputAudio{
+				Data:   base64.StdEncoding.EncodeToString(v.Data),
+				Format: audioFormat(v.MediaType),
+			}})
+		case ai.Document:
+			hasImage = true // force the array content form
+			f := &oaFile{Filename: v.Name}
+			if v.URL != "" {
+				f.FileID = v.URL // OpenAI references uploaded files by ID/URL
+			} else {
+				f.FileData = "data:" + v.MediaType + ";base64," + base64.StdEncoding.EncodeToString(v.Data)
+			}
+			textParts = append(textParts, oaContentPart{Type: "file", File: f})
 		case ai.ToolCall:
 			var tc oaToolCall
 			tc.ID = v.ID
@@ -146,6 +162,28 @@ func toWireMessages(m ai.Message) ([]oaMessage, error) {
 		out = append(out, wm)
 	}
 	return append(out, toolMsgs...), nil
+}
+
+// audioFormat maps an audio media type to the bare format token OpenAI expects
+// (e.g. "audio/mp3" or "audio/mpeg" -> "mp3").
+func audioFormat(mediaType string) string {
+	switch mediaType {
+	case "audio/wav", "audio/x-wav", "audio/wave":
+		return "wav"
+	case "audio/mp3", "audio/mpeg":
+		return "mp3"
+	case "audio/flac":
+		return "flac"
+	case "audio/ogg":
+		return "ogg"
+	case "audio/webm":
+		return "webm"
+	default:
+		if _, format, ok := strings.Cut(mediaType, "/"); ok {
+			return format
+		}
+		return mediaType
+	}
 }
 
 func (c *Client) fromWire(w oaResponse, raw []byte) (ai.Response, error) {

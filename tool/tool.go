@@ -82,12 +82,28 @@ func (t *funcTool[I]) Call(ctx context.Context, input json.RawMessage) (string, 
 	return t.fn(ctx, in)
 }
 
+// RawSchemaTool is an optional interface a [Tool] may implement to supply its
+// input schema as raw JSON rather than have it re-serialized from a
+// [schema.Schema]. [Def] prefers this when present, preserving full schema
+// fidelity for tools whose schema originates outside this library (for example
+// tools imported from an MCP server).
+type RawSchemaTool interface {
+	Tool
+	RawInputSchema() json.RawMessage
+}
+
 // Def converts a Tool to the provider-neutral [ai.ToolDef].
 func Def(t Tool) ai.ToolDef {
+	schemaJSON := t.InputSchema().JSON()
+	if rst, ok := t.(RawSchemaTool); ok {
+		if raw := rst.RawInputSchema(); len(raw) > 0 {
+			schemaJSON = raw
+		}
+	}
 	return ai.ToolDef{
 		Name:        t.Name(),
 		Description: t.Description(),
-		InputSchema: t.InputSchema().JSON(),
+		InputSchema: schemaJSON,
 	}
 }
 

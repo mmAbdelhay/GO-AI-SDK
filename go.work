@@ -1,0 +1,12 @@
+// go.work ties the core module and its optional submodules together for local
+// development, so edits to the core are picked up by the submodules without a
+// tagged release. It does not affect consumers of the published modules.
+go 1.23.0
+
+use (
+	.
+	./mcp
+	./otel
+	./store/postgres
+	./store/sqlite
+)

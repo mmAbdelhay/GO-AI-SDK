@@ -137,6 +137,18 @@ func toWireBlock(p ai.Part) (wireBlock, error) {
 			MediaType: v.MediaType,
 			Data:      base64.StdEncoding.EncodeToString(v.Data),
 		}}, nil
+	case ai.Document:
+		src := &wireImageSource{}
+		if v.URL != "" {
+			src.Type, src.URL = "url", v.URL
+		} else {
+			src.Type = "base64"
+			src.MediaType = v.MediaType
+			src.Data = base64.StdEncoding.EncodeToString(v.Data)
+		}
+		return wireBlock{Type: "document", Source: src, Title: v.Name}, nil
+	case ai.Audio:
+		return wireBlock{}, fmt.Errorf("anthropic: audio content parts are not supported by the Messages API")
 	case ai.ToolCall:
 		return wireBlock{Type: "tool_use", ID: v.ID, Name: v.Name, Input: v.Input}, nil
 	case ai.ToolResult:

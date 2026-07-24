@@ -53,6 +53,9 @@ type wireBlock struct {
 	Name  string          `json:"name,omitempty"`
 	Input json.RawMessage `json:"input,omitempty"`
 
+	// document
+	Title string `json:"title,omitempty"`
+
 	// tool_result
 	ToolUseID string      `json:"tool_use_id,omitempty"`
 	Content   []wireBlock `json:"content,omitempty"`

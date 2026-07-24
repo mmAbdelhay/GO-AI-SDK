@@ -135,7 +135,7 @@ no API key and no network. A shared conformance suite
 
 | Feature | Status |
 | --- | --- |
-| Canonical message model (text, image, tool-call, tool-result) | ✅ |
+| Canonical message model (text, image, **audio, document**, tool-call, tool-result) | ✅ |
 | Text generation + streaming iterators | ✅ |
 | Structured output (`GenerateObject[T]`, schema derivation, repair loop) | ✅ |
 | Tools + agent loop (caps, budgets, approval hook, cancellation) | ✅ |
@@ -145,14 +145,17 @@ no API key and no network. A shared conformance suite
 | Resilience: retry, fallback, circuit breaker, rate limiting | ✅ |
 | Observability: slog, hooks, usage/cost tracking | ✅ |
 | Provider conformance test suite + fakes (`aitest`) | ✅ |
-| SQL-backed stores (pgvector, sqlite) as submodules | 🔜 |
-| OpenTelemetry tracing submodule | 🔜 |
-| Multimodal beyond image input (audio, files) | 🔜 |
-| MCP client support | 🔜 |
+| Multimodal: audio + document input, speech synthesis, transcription | ✅ |
+| SQL-backed stores: SQLite (`store/sqlite`) and pgvector (`store/postgres`) | ✅ |
+| OpenTelemetry tracing submodule (`otel`) | ✅ |
+| MCP client support (`mcp`) — agents consume MCP-server tools | ✅ |
 
-The deferred items are separate submodules or lower-priority phases by design:
-the core stays dependency-free, and `middleware.Hooks` is the extension point
-the OTel submodule will build on.
+The last four ship as **separate Go submodules**, each with its own `go.mod`, so
+the core stays dependency-free (design principle P2) — you pull the
+OpenTelemetry, SQLite/Postgres, or MCP dependency trees only if you import them.
+The tracing submodule is built on the same `middleware.Hooks` extension point any
+middleware uses. The Postgres store's integration tests require a database
+(`TEST_POSTGRES_DSN`); everything else in the repository tests offline.
 
 ## Package layout
 
@@ -173,7 +176,18 @@ provider/groq           Groq (OpenAI-compatible, thin wrapper)
 provider/xai            xAI (OpenAI-compatible, thin wrapper)
 aitest                  fakes, fake transport, conformance suite
 examples/               runnable examples
+
+separate submodules (own go.mod; pulled only when imported):
+otel                    OpenTelemetry tracing (middleware built on middleware.Hooks)
+store/sqlite            SQLite-backed memory.Store + vector.Store (pure Go, no cgo)
+store/postgres          PostgreSQL + pgvector memory.Store + vector.Store
+mcp                     MCP client: import a Model Context Protocol server's tools
 ```
+
+Multimodal input (`ai.Audio`, `ai.Document`) is part of the core message model;
+speech synthesis (`ai.SpeechModel`) and transcription (`ai.Transcriber`), with
+OpenAI implementations, live alongside the chat provider. The `ai.Message` JSON
+codec round-trips every content part type, which is what the SQL stores persist.
 
 ## Design principles
 
@@ -190,12 +204,22 @@ examples/               runnable examples
 
 ## Testing
 
+The core module and each submodule test independently and entirely offline (a
+`go.work` at the repo root ties them together for local development):
+
 ```sh
+# core module
 go test ./...                 # everything, offline, no keys
 go test -race ./...
 go test -run x -fuzz FuzzParseSSE ./provider/anthropic
 go test -run x -fuzz FuzzValidate ./schema
 ANTHROPIC_API_KEY=... go test -tags integration ./provider/anthropic
+
+# submodules (run from each directory)
+cd otel         && go test ./...      # in-memory span exporter
+cd store/sqlite && go test ./...      # in-process SQLite (:memory:)
+cd mcp          && go test ./...      # in-memory MCP transport, real in-proc server
+cd store/postgres && go test ./...    # skips unless TEST_POSTGRES_DSN is set
 ```
 
 ## License

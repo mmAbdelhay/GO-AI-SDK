@@ -46,6 +46,25 @@ type Image struct {
 	URL string
 }
 
+// Audio is an audio content part (input audio, e.g. for transcription-capable
+// chat models). MediaType (for example "audio/wav" or "audio/mp3") must describe
+// the bytes. Providers that cannot accept audio input return an explicit error
+// rather than dropping the part.
+type Audio struct {
+	Data      []byte
+	MediaType string
+}
+
+// Document is a file content part (for example a PDF). Exactly one of Data or
+// URL should be set; when Data is used, MediaType must describe the bytes. Name
+// is an optional display title passed to providers that support one.
+type Document struct {
+	Data      []byte
+	MediaType string
+	URL       string
+	Name      string
+}
+
 // ToolCall is a request from the model to invoke a tool. It appears in assistant
 // messages. Phase 1 models and translates tool calls so the canonical form is
 // round-trip complete; the tool registry and agent loop arrive in a later phase.
@@ -71,6 +90,8 @@ type ToolResult struct {
 
 func (Text) isPart()       {}
 func (Image) isPart()      {}
+func (Audio) isPart()      {}
+func (Document) isPart()   {}
 func (ToolCall) isPart()   {}
 func (ToolResult) isPart() {}
 
